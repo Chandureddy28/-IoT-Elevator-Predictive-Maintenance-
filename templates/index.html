@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ElevatorAI — IoT Predictive Maintenance Dashboard</title>
+    <meta name="description" content="Real-time IoT-based predictive maintenance dashboard for elevator systems using XGBoost machine learning.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- ══════════════ HEADER ══════════════ -->
+<header class="header">
+    <div class="header-left">
+        <div class="logo">
+            <div class="logo-icon">🛗</div>
+            <div>
+                <div class="logo-title">ElevatorAI</div>
+                <div class="logo-sub">IoT Predictive Maintenance</div>
+            </div>
+        </div>
+    </div>
+    <div class="header-center">
+        <div class="status-pill" id="connectionStatus">
+            <span class="pulse-dot"></span>
+            <span>LIVE MONITORING</span>
+        </div>
+    </div>
+    <div class="header-right">
+        <div class="header-stat">
+            <span class="header-stat-label">Model Accuracy</span>
+            <span class="header-stat-value accent">{{ accuracy }}%</span>
+        </div>
+        <div class="header-stat">
+            <span class="header-stat-label">Training Samples</span>
+            <span class="header-stat-value">{{ n_samples }}</span>
+        </div>
+        <div class="header-stat">
+            <span class="header-stat-label">Uptime</span>
+            <span class="header-stat-value" id="headerUptime">00:00:00</span>
+        </div>
+    </div>
+</header>
+
+<!-- ══════════════ MAIN ══════════════ -->
+<main class="main-grid">
+
+    <!-- ── Column 1: Prediction + Alerts ── -->
+    <div class="col-left">
+
+        <!-- Current Prediction -->
+        <div class="card prediction-card" id="predCard">
+            <div class="card-header">
+                <span class="card-title">🤖 Live Prediction</span>
+                <span class="badge" id="predBadge">NORMAL</span>
+            </div>
+            <div class="prediction-main">
+                <div class="prediction-icon" id="predIcon">✅</div>
+                <div class="prediction-status" id="predStatus">Normal Operation</div>
+                <div class="prediction-confidence" id="predConfidence">100.0% confidence</div>
+            </div>
+            <div class="prob-bars">
+                <div class="prob-label">Fault Probabilities</div>
+                <div class="prob-item">
+                    <span class="prob-name">Normal</span>
+                    <div class="prob-bar-wrap"><div class="prob-bar" id="pb0" style="background:#22c55e"></div></div>
+                    <span class="prob-pct" id="pp0">0%</span>
+                </div>
+                <div class="prob-item">
+                    <span class="prob-name">Bearing</span>
+                    <div class="prob-bar-wrap"><div class="prob-bar" id="pb1" style="background:#ef4444"></div></div>
+                    <span class="prob-pct" id="pp1">0%</span>
+                </div>
+                <div class="prob-item">
+                    <span class="prob-name">Overheating</span>
+                    <div class="prob-bar-wrap"><div class="prob-bar" id="pb2" style="background:#f97316"></div></div>
+                    <span class="prob-pct" id="pp2">0%</span>
+                </div>
+                <div class="prob-item">
+                    <span class="prob-name">Door Fault</span>
+                    <div class="prob-bar-wrap"><div class="prob-bar" id="pb3" style="background:#3b82f6"></div></div>
+                    <span class="prob-pct" id="pp3">0%</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Health -->
+        <div class="card health-card">
+            <div class="card-header">
+                <span class="card-title">🏥 System Health</span>
+            </div>
+            <div class="health-ring-wrap">
+                <svg class="health-ring" viewBox="0 0 120 120">
+                    <circle class="ring-bg" cx="60" cy="60" r="50"/>
+                    <circle class="ring-fg" id="healthRing" cx="60" cy="60" r="50"
+                            stroke-dasharray="314" stroke-dashoffset="0"/>
+                </svg>
+                <div class="health-text">
+                    <div class="health-pct" id="healthPct">100%</div>
+                    <div class="health-label">Health</div>
+                </div>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-val" id="st-readings">0</div>
+                    <div class="stat-lbl">Readings</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-val red" id="st-faults">0</div>
+                    <div class="stat-lbl">Faults</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-val orange" id="st-faultrate">0%</div>
+                    <div class="stat-lbl">Fault Rate</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-val green" id="st-alerts">0</div>
+                    <div class="stat-lbl">Alerts</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alert Feed -->
+        <div class="card alerts-card">
+            <div class="card-header">
+                <span class="card-title">🚨 Alert Feed</span>
+                <span class="badge red" id="alertCount">0</span>
+            </div>
+            <div class="alert-feed" id="alertFeed">
+                <div class="alert-empty">No faults detected — System operating normally</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ── Column 2: Sensor Gauges + Charts ── -->
+    <div class="col-right">
+
+        <!-- Sensor Gauges Row -->
+        <div class="gauges-row">
+            <div class="gauge-card" id="g-vibration">
+                <div class="gauge-icon">📳</div>
+                <div class="gauge-label">Vibration RMS</div>
+                <div class="gauge-value" id="gv-vibration">--</div>
+                <div class="gauge-unit">m/s²</div>
+                <div class="gauge-bar-wrap"><div class="gauge-bar" id="gb-vibration"></div></div>
+                <div class="gauge-status" id="gs-vibration">Normal</div>
+            </div>
+            <div class="gauge-card" id="g-temp">
+                <div class="gauge-icon">🌡️</div>
+                <div class="gauge-label">Temperature</div>
+                <div class="gauge-value" id="gv-temp">--</div>
+                <div class="gauge-unit">°C</div>
+                <div class="gauge-bar-wrap"><div class="gauge-bar" id="gb-temp"></div></div>
+                <div class="gauge-status" id="gs-temp">Normal</div>
+            </div>
+            <div class="gauge-card" id="g-current">
+                <div class="gauge-icon">⚡</div>
+                <div class="gauge-label">Motor Current</div>
+                <div class="gauge-value" id="gv-current">--</div>
+                <div class="gauge-unit">Amperes</div>
+                <div class="gauge-bar-wrap"><div class="gauge-bar" id="gb-current"></div></div>
+                <div class="gauge-status" id="gs-current">Normal</div>
+            </div>
+            <div class="gauge-card" id="g-door">
+                <div class="gauge-icon">🚪</div>
+                <div class="gauge-label">Door Variance</div>
+                <div class="gauge-value" id="gv-door">--</div>
+                <div class="gauge-unit">σ²</div>
+                <div class="gauge-bar-wrap"><div class="gauge-bar" id="gb-door"></div></div>
+                <div class="gauge-status" id="gs-door">Normal</div>
+            </div>
+            <div class="gauge-card" id="g-accel">
+                <div class="gauge-icon">📈</div>
+                <div class="gauge-label">Acceleration</div>
+                <div class="gauge-value" id="gv-accel">--</div>
+                <div class="gauge-unit">g-peak</div>
+                <div class="gauge-bar-wrap"><div class="gauge-bar" id="gb-accel"></div></div>
+                <div class="gauge-status" id="gs-accel">Normal</div>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-grid">
+            <div class="card chart-card">
+                <div class="card-header"><span class="card-title">📳 Vibration RMS</span></div>
+                <canvas id="chartVibration"></canvas>
+            </div>
+            <div class="card chart-card">
+                <div class="card-header"><span class="card-title">🌡️ Temperature</span></div>
+                <canvas id="chartTemp"></canvas>
+            </div>
+            <div class="card chart-card">
+                <div class="card-header"><span class="card-title">⚡ Motor Current</span></div>
+                <canvas id="chartCurrent"></canvas>
+            </div>
+            <div class="card chart-card">
+                <div class="card-header"><span class="card-title">🚪 Door Signal</span></div>
+                <canvas id="chartDoor"></canvas>
+            </div>
+        </div>
+
+        <!-- Maintenance Log -->
+        <div class="card log-card">
+            <div class="card-header">
+                <span class="card-title">📋 Maintenance Event Log</span>
+                <span class="card-sub" id="lastUpdate">Last update: --</span>
+            </div>
+            <div class="table-wrap">
+                <table class="log-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Status</th>
+                            <th>Fault Type</th>
+                            <th>Confidence</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logTableBody">
+                        <tr><td colspan="5" class="empty-row">Awaiting data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</main>
+
+<!-- ══════════════ FAULT FLASH OVERLAY ══════════════ -->
+<div class="fault-overlay" id="faultOverlay">
+    <div class="fault-modal">
+        <div class="fault-modal-icon" id="faultModalIcon">⚠️</div>
+        <div class="fault-modal-title" id="faultModalTitle">FAULT DETECTED</div>
+        <div class="fault-modal-sub" id="faultModalSub">Bearing Failure</div>
+        <button class="fault-dismiss" onclick="dismissFault()">Acknowledge</button>
+    </div>
+</div>
+
+<script src="/static/dashboard.js"></script>
+</body>
+</html>
